@@ -53,6 +53,7 @@ Toda la información se guarda localmente en el navegador del usuario usando Loc
 Esto significa que:
 
 - Los datos no se envían a ningún servidor.
+- Puedes importar y exportar en JSON en caso de ser necesario.
 - Cada usuario es dueño total de su información.
 - Borrar el almacenamiento del navegador eliminará los datos.
 
