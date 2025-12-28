@@ -69,6 +69,9 @@ const elements = {
   rangeFilters: document.getElementById("rangeFilters"),
   chartMode: document.getElementById("chartMode"),
   searchInput: document.getElementById("searchInput"),
+  settingsBtn: document.getElementById("settingsBtn"),
+  settingsModal: document.getElementById("settingsModal"),
+  closeSettingsModal: document.getElementById("closeSettingsModal"),
   addMovementBtn: document.getElementById("addMovementBtn"),
   addBalanceBtn: document.getElementById("addBalanceBtn"),
   movementModal: document.getElementById("movementModal"),
@@ -99,7 +102,10 @@ const elements = {
   closeBalanceModal: document.getElementById("closeBalanceModal"),
   cancelBalance: document.getElementById("cancelBalance"),
   renamePortfolioBtn: document.getElementById("renamePortfolioBtn"),
-  deletePortfolioBtn: document.getElementById("deletePortfolioBtn")
+  deletePortfolioBtn: document.getElementById("deletePortfolioBtn"),
+  exportBtn: document.getElementById("exportBtn"),
+  importInput: document.getElementById("importInput"),
+  resetBtn: document.getElementById("resetBtn")
 };
 
 function loadState() {
@@ -875,6 +881,48 @@ function handleDeletePortfolio() {
   switchView("dashboard");
 }
 
+function handleExport() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "aurum-data.json";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function handleImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(reader.result);
+      if (parsed.portfolios && parsed.transactions) {
+        if (!parsed.balances) parsed.balances = [];
+        state = parsed;
+        saveState();
+        renderSidebar();
+        renderDashboard();
+        if (currentPortfolioId) renderPortfolio();
+      }
+    } catch {
+      alert("JSON invalido");
+    }
+  };
+  reader.readAsText(file);
+}
+
+function handleReset() {
+  const confirmed = confirm("Seguro que quieres resetear los datos?");
+  if (!confirmed) return;
+  state = JSON.parse(JSON.stringify(demoData));
+  saveState();
+  renderSidebar();
+  renderDashboard();
+  switchView("dashboard");
+}
+
 function init() {
   renderSidebar();
   renderDashboard();
@@ -906,6 +954,11 @@ function init() {
   elements.chartMode.addEventListener("click", handleChartMode);
   elements.dashboardChartMode.addEventListener("click", handleDashboardChartMode);
   elements.searchInput.addEventListener("input", handleSearch);
+  elements.settingsBtn.addEventListener("click", () => elements.settingsModal.classList.add("open"));
+  elements.closeSettingsModal.addEventListener("click", () => elements.settingsModal.classList.remove("open"));
+  elements.exportBtn.addEventListener("click", handleExport);
+  elements.importInput.addEventListener("change", handleImport);
+  elements.resetBtn.addEventListener("click", handleReset);
   document.querySelector("[data-view='dashboard']").addEventListener("click", handleDashboardClick);
   elements.deletePortfolioBtn.addEventListener("click", handleDeletePortfolio);
 }
