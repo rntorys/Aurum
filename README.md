@@ -43,7 +43,7 @@ No se requiere instalación, servidor ni dependencias adicionales.
 ## 🌐 Publicación en GitHub Pages
 
 Aurum es totalmente compatible con GitHub Pages.
-Link:
+Link: https://rntorys.github.io/Aurum/
 
 ---
 
