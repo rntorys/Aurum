@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aurum</title>
+  <link rel="icon" type="image/png" href="img/logo.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar__header">
+        <div>
+          <img src="img/logo.png" alt="Aurum" class="sidebar__logo" />
+          <h1>Aurum</h1>
+          <p>Investor Dashboard</p>
+        </div>
+        <button class="icon-btn sidebar__close" id="closeSidebar">X</button>
+      </div>
+      <button class="btn btn--primary" id="newPortfolioBtn">+ Nueva cartera</button>
+      <nav class="sidebar__nav">
+        <button class="nav__item" data-view="dashboard">
+          <span>Inicio / Dashboard</span>
+        </button>
+        <div class="nav__label">Carteras</div>
+        <div id="portfolioList" class="nav__list"></div>
+      </nav>
+      <div class="sidebar__footer">
+        <button class="btn btn--ghost" id="renamePortfolioBtn">Renombrar cartera</button>
+        <button class="btn btn--danger" id="deletePortfolioBtn">Eliminar cartera</button>
+      </div>
+    </aside>
+
+    <div class="content">
+      <header class="topbar">
+        <button class="icon-btn" id="toggleSidebar">Menu</button>
+        <div>
+          <h2 id="viewTitle">Dashboard</h2>
+          <p id="viewSubtitle">Resumen global</p>
+        </div>
+      </header>
+
+      <main id="mainContent">
+        <section id="dashboardView" class="view active">
+          <div class="kpi-grid" id="dashboardKpis"></div>
+
+          <section class="card">
+            <div class="card__header">
+              <h3>Resumen por cartera</h3>
+            </div>
+            <div class="table-wrapper">
+              <table class="table" id="summaryTable">
+                <thead>
+                  <tr>
+                    <th>Cartera</th>
+                    <th>Aportes netos</th>
+                    <th>Valor actual</th>
+                    <th>P/L</th>
+                    <th>Ultima actualizacion</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+
+          <div class="chart-grid">
+            <section class="card">
+              <div class="card__header">
+                <h3>Evolucion total</h3>
+                <div class="segmented" id="dashboardChartMode">
+                  <button data-mode="cumulative" class="active">Ganancia acumulada</button>
+                  <button data-mode="gain">Ganancia diaria</button>
+                  <button data-mode="balance">Balance total</button>
+                </div>
+              </div>
+              <canvas id="lineChart" height="220"></canvas>
+            </section>
+            <section class="card">
+              <div class="card__header">
+                <h3>Distribucion por cartera</h3>
+              </div>
+              <canvas id="doughnutChart" height="220"></canvas>
+            </section>
+          </div>
+        </section>
+
+        <section id="portfolioView" class="view">
+          <div class="portfolio-header">
+            <div>
+              <h3 id="portfolioName">Cartera</h3>
+              <p class="muted">Detalle y movimientos</p>
+            </div>
+            <div class="filters">
+              <div class="segmented" id="rangeFilters">
+                <button data-range="7d">7d</button>
+                <button data-range="30d" class="active">30d</button>
+                <button data-range="ytd">YTD</button>
+                <button data-range="all">Todo</button>
+              </div>
+              <input type="text" id="searchInput" placeholder="Buscar nota" />
+              <button class="btn btn--primary" id="addMovementBtn">Agregar movimiento</button>
+            </div>
+          </div>
+
+          <div class="kpi-grid" id="portfolioKpis"></div>
+
+          <section class="card">
+            <div class="card__header">
+              <h3>Evolucion diaria</h3>
+              <div class="segmented" id="chartMode">
+                <button data-mode="cumulative" class="active">Ganancia acumulada</button>
+                <button data-mode="gain">Ganancia diaria</button>
+                <button data-mode="balance">Balance total</button>
+              </div>
+              <button class="btn btn--primary" id="addBalanceBtn">Agregar balance diario</button>
+            </div>
+            <canvas id="portfolioLineChart" height="220"></canvas>
+          </section>
+
+          <section class="card">
+            <div class="card__header">
+              <h3>Registros de balance</h3>
+            </div>
+            <div class="table-wrapper">
+              <table class="table" id="balancesTable">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Balance (CLP)</th>
+                    <th>Ganancia diaria</th>
+                    <th>% diario</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="pagination">
+              <span id="balancesInfo" class="muted"></span>
+              <div class="pagination__controls">
+                <button class="btn btn--ghost" id="balancesPrev">Anterior</button>
+                <button class="btn btn--ghost" id="balancesNext">Siguiente</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card__header">
+              <h3>Movimientos</h3>
+            </div>
+            <div class="table-wrapper">
+              <table class="table" id="transactionsTable">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Tipo</th>
+                    <th>Monto</th>
+                    <th>Nota</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="modal" id="movementModal">
+    <div class="modal__content">
+      <div class="modal__header">
+        <h3 id="modalTitle">Agregar movimiento</h3>
+        <button class="icon-btn" id="closeModal">X</button>
+      </div>
+      <form id="movementForm">
+        <input type="hidden" id="transactionId" />
+        <label>
+          Fecha
+          <input type="date" id="dateInput" required />
+        </label>
+        <label>
+          Tipo
+          <select id="typeInput">
+            <option value="aporte">Aporte</option>
+            <option value="retiro">Retiro</option>
+            <option value="compra">Compra</option>
+            <option value="venta">Venta</option>
+            <option value="comision">Comision</option>
+          </select>
+        </label>
+        <label>
+          Monto (CLP)
+          <input type="number" id="amountInput" min="0" required />
+        </label>
+        <label>
+          Nota
+          <textarea id="noteInput" rows="3"></textarea>
+        </label>
+        <div class="modal__actions">
+          <button type="button" class="btn btn--ghost" id="cancelModal">Cancelar</button>
+          <button type="submit" class="btn btn--primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="portfolioModal">
+    <div class="modal__content">
+      <div class="modal__header">
+        <h3 id="portfolioModalTitle">Nueva cartera</h3>
+        <button class="icon-btn" id="closePortfolioModal">X</button>
+      </div>
+      <form id="portfolioForm">
+        <label>
+          Nombre de cartera
+          <input type="text" id="portfolioNameInput" required />
+        </label>
+        <label>
+          Color representativo
+          <input type="color" id="portfolioColorInput" value="#22c55e" />
+        </label>
+        <div class="modal__actions">
+          <button type="button" class="btn btn--ghost" id="cancelPortfolio">Cancelar</button>
+          <button type="submit" class="btn btn--primary" id="portfolioSubmitBtn">Crear</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="balanceModal">
+    <div class="modal__content">
+      <div class="modal__header">
+        <h3 id="balanceModalTitle">Agregar balance diario</h3>
+        <button class="icon-btn" id="closeBalanceModal">X</button>
+      </div>
+      <form id="balanceForm">
+        <input type="hidden" id="balanceId" />
+        <label>
+          Fecha
+          <input type="date" id="balanceDateInput" required />
+        </label>
+        <label>
+          Balance total (CLP)
+          <input type="number" id="balanceValueInput" min="0" required />
+        </label>
+        <div class="modal__actions">
+          <button type="button" class="btn btn--ghost" id="cancelBalance">Cancelar</button>
+          <button type="submit" class="btn btn--primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
