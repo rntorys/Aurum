@@ -40,6 +40,7 @@
           <h2 id="viewTitle">Dashboard</h2>
           <p id="viewSubtitle">Resumen global</p>
         </div>
+        <button class="icon-btn" id="settingsBtn">⚙</button>
       </header>
 
       <main id="mainContent">
@@ -253,6 +254,23 @@
           <button type="submit" class="btn btn--primary">Guardar</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div class="modal" id="settingsModal">
+    <div class="modal__content">
+      <div class="modal__header">
+        <h3>Configuracion</h3>
+        <button class="icon-btn" id="closeSettingsModal">X</button>
+      </div>
+      <div class="settings-list">
+        <button class="btn btn--ghost" id="exportBtn">Exportar JSON</button>
+        <label class="btn btn--ghost file-input">
+          Importar JSON
+          <input type="file" id="importInput" accept="application/json" />
+        </label>
+        <button class="btn btn--danger" id="resetBtn">Resetear datos</button>
+      </div>
     </div>
   </div>
 
