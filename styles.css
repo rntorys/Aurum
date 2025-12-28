@@ -390,6 +390,12 @@ body {
   gap: 10px;
 }
 
+.settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .file-input input {
   display: none;
 }
