@@ -58,7 +58,7 @@
                     <th>Cartera</th>
                     <th>Aportes netos</th>
                     <th>Valor actual</th>
-                    <th>P/L</th>
+                    <th>Ganancias totales</th>
                     <th>Ultima actualizacion</th>
                   </tr>
                 </thead>
@@ -94,19 +94,14 @@
               <h3 id="portfolioName">Cartera</h3>
               <p class="muted">Detalle y movimientos</p>
             </div>
-            <div class="filters">
-              <div class="segmented" id="rangeFilters">
-                <button data-range="7d">7d</button>
-                <button data-range="30d" class="active">30d</button>
-                <button data-range="ytd">YTD</button>
-                <button data-range="all">Todo</button>
-              </div>
-              <input type="text" id="searchInput" placeholder="Buscar nota" />
-              <button class="btn btn--primary" id="addMovementBtn">Agregar movimiento</button>
-            </div>
           </div>
 
           <div class="kpi-grid" id="portfolioKpis"></div>
+          <div class="widgets-header">
+            <h4>Widgets personalizados</h4>
+            <button class="btn btn--ghost" id="addWidgetBtn">Agregar widget</button>
+          </div>
+          <div class="widget-grid" id="customWidgets"></div>
 
           <section class="card">
             <div class="card__header">
@@ -120,6 +115,16 @@
             </div>
             <canvas id="portfolioLineChart" height="220"></canvas>
           </section>
+
+          <div class="details-bar">
+            <h4>Detalles y movimientos</h4>
+            <div class="segmented" id="rangeFilters">
+              <button data-range="7d">7d</button>
+              <button data-range="30d" class="active">30d</button>
+              <button data-range="ytd">YTD</button>
+              <button data-range="all">Todo</button>
+            </div>
+          </div>
 
           <section class="card">
             <div class="card__header">
@@ -151,6 +156,20 @@
           <section class="card">
             <div class="card__header">
               <h3>Movimientos</h3>
+              <div class="filters">
+                <select id="typeFilter">
+                  <option value="all">Todos los tipos</option>
+                  <option value="aporte">Aporte</option>
+                  <option value="retiro">Retiro</option>
+                  <option value="compra">Compra</option>
+                  <option value="venta">Venta</option>
+                  <option value="comision">Comision</option>
+                </select>
+                <input type="number" id="amountMin" min="0" placeholder="Min CLP" />
+                <input type="number" id="amountMax" min="0" placeholder="Max CLP" />
+                <input type="text" id="searchInput" placeholder="Buscar por nota, tipo o fecha" />
+              </div>
+              <button class="btn btn--primary" id="addMovementBtn">Agregar movimiento</button>
             </div>
             <div class="table-wrapper">
               <table class="table" id="transactionsTable">
@@ -271,6 +290,32 @@
         </label>
         <button class="btn btn--danger" id="resetBtn">Resetear datos</button>
       </div>
+    </div>
+  </div>
+
+  <div class="modal" id="widgetModal">
+    <div class="modal__content">
+      <div class="modal__header">
+        <h3>Agregar widget</h3>
+        <button class="icon-btn" id="closeWidgetModal">X</button>
+      </div>
+      <form id="widgetForm">
+        <label>
+          Tipo de widget
+          <select id="widgetType" required>
+            <option value="last30Gain">Ultimos 30 dias</option>
+            <option value="avgDailyValue">Promedio diario numerico</option>
+            <option value="bestDay">Mejor dia</option>
+            <option value="worstDay">Peor dia</option>
+            <option value="streakCurrent">Racha actual</option>
+            <option value="maxStreakPositive">Maxima racha historica</option>
+          </select>
+        </label>
+        <div class="modal__actions">
+          <button type="button" class="btn btn--ghost" id="cancelWidget">Cancelar</button>
+          <button type="submit" class="btn btn--primary">Agregar</button>
+        </div>
+      </form>
     </div>
   </div>
 
