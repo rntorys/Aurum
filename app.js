@@ -43,11 +43,13 @@ const BALANCES_PER_PAGE = 5;
 let lineChart = null;
 let doughnutChart = null;
 let portfolioLineChart = null;
+let currentView = "dashboard";
 
 const elements = {
   sidebar: document.getElementById("sidebar"),
   toggleSidebar: document.getElementById("toggleSidebar"),
   closeSidebar: document.getElementById("closeSidebar"),
+  dashboardNav: document.querySelector("[data-view='dashboard']"),
   portfolioList: document.getElementById("portfolioList"),
   dashboardView: document.getElementById("dashboardView"),
   portfolioView: document.getElementById("portfolioView"),
@@ -69,6 +71,16 @@ const elements = {
   rangeFilters: document.getElementById("rangeFilters"),
   chartMode: document.getElementById("chartMode"),
   searchInput: document.getElementById("searchInput"),
+  typeFilter: document.getElementById("typeFilter"),
+  amountMin: document.getElementById("amountMin"),
+  amountMax: document.getElementById("amountMax"),
+  customWidgets: document.getElementById("customWidgets"),
+  addWidgetBtn: document.getElementById("addWidgetBtn"),
+  widgetModal: document.getElementById("widgetModal"),
+  closeWidgetModal: document.getElementById("closeWidgetModal"),
+  widgetForm: document.getElementById("widgetForm"),
+  widgetType: document.getElementById("widgetType"),
+  cancelWidget: document.getElementById("cancelWidget"),
   settingsBtn: document.getElementById("settingsBtn"),
   settingsModal: document.getElementById("settingsModal"),
   closeSettingsModal: document.getElementById("closeSettingsModal"),
@@ -110,17 +122,24 @@ const elements = {
 
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return JSON.parse(JSON.stringify(demoData));
+  if (!raw) {
+    const seed = JSON.parse(JSON.stringify(demoData));
+    seed.customWidgets = [];
+    return seed;
+  }
   try {
     const parsed = JSON.parse(raw);
     if (!parsed.balances) parsed.balances = [];
+    if (!parsed.customWidgets) parsed.customWidgets = [];
     parsed.portfolios = parsed.portfolios.map((portfolio, index) => ({
       ...portfolio,
       color: portfolio.color || DEFAULT_COLORS[index % DEFAULT_COLORS.length]
     }));
     return parsed;
   } catch {
-    return JSON.parse(JSON.stringify(demoData));
+    const seed = JSON.parse(JSON.stringify(demoData));
+    seed.customWidgets = [];
+    return seed;
   }
 }
 
@@ -357,6 +376,117 @@ function buildGlobalCumulativeGainSeries(balances) {
   });
 }
 
+const WIDGET_DEFS = {
+  last30Gain: {
+    title: "Ultimos 30 dias",
+    build: (balances, portfolioId) => {
+      if (balances.length < 2) {
+        return { value: "-", note: "No hay suficientes balances." };
+      }
+      const latestDate = new Date(balances[balances.length - 1].date);
+      const from = new Date(latestDate);
+      from.setDate(latestDate.getDate() - 30);
+      const windowBalances = balances.filter((item) => new Date(item.date) >= from);
+      if (windowBalances.length < 2) {
+        return { value: "-", note: "No hay suficientes registros en 30 dias." };
+      }
+      const dailySeries = buildDailyGainSeries(windowBalances, portfolioId);
+      const sum = dailySeries.reduce((acc, item) => acc + item.value, 0);
+      const note =
+        windowBalances.length < 30 ? `Solo ${windowBalances.length} registros en el rango.` : null;
+      return { value: formatCurrency(sum), note };
+    }
+  },
+  avgDailyValue: {
+    title: "Promedio diario numerico",
+    build: (balances, portfolioId) => {
+      if (balances.length < 2) {
+        return { value: "-", note: "No hay suficientes balances." };
+      }
+      const dailySeries = buildDailyGainSeries(balances, portfolioId);
+      const sum = dailySeries.reduce((acc, item) => acc + item.value, 0);
+      const avg = sum / Math.max(dailySeries.length - 1, 1);
+      return { value: formatCurrency(avg), note: null };
+    }
+  },
+  bestDay: {
+    title: "Mejor dia",
+    build: (balances, portfolioId) => {
+      if (balances.length < 2) {
+        return { value: "-", note: "No hay suficientes balances." };
+      }
+      const dailySeries = buildDailyGainSeries(balances, portfolioId).slice(1);
+      if (!dailySeries.length) return { value: "-", note: "No hay suficientes balances." };
+      const best = dailySeries.reduce((acc, item) => (item.value > acc.value ? item : acc), dailySeries[0]);
+      return { value: formatCurrency(best.value), note: `Fecha: ${best.date}` };
+    }
+  },
+  worstDay: {
+    title: "Peor dia",
+    build: (balances, portfolioId) => {
+      if (balances.length < 2) {
+        return { value: "-", note: "No hay suficientes balances." };
+      }
+      const dailySeries = buildDailyGainSeries(balances, portfolioId).slice(1);
+      if (!dailySeries.length) return { value: "-", note: "No hay suficientes balances." };
+      const worst = dailySeries.reduce((acc, item) => (item.value < acc.value ? item : acc), dailySeries[0]);
+      return { value: formatCurrency(worst.value), note: `Fecha: ${worst.date}` };
+    }
+  },
+  streakCurrent: {
+    title: "Racha actual",
+    build: (balances, portfolioId) => {
+      if (balances.length < 2) {
+        return { value: "-", note: "No hay suficientes balances." };
+      }
+      const dailySeries = buildDailyGainSeries(balances, portfolioId).slice(1);
+      if (!dailySeries.length) return { value: "-", note: "No hay suficientes balances." };
+      const last = dailySeries[dailySeries.length - 1];
+      if (last.value === 0) {
+        return { value: "0 dias", note: "Ultimo dia en cero." };
+      }
+      const direction = last.value > 0 ? 1 : -1;
+      let streak = 0;
+      for (let i = dailySeries.length - 1; i >= 0; i -= 1) {
+        if ((dailySeries[i].value > 0 && direction > 0) || (dailySeries[i].value < 0 && direction < 0)) {
+          streak += 1;
+        } else {
+          break;
+        }
+      }
+      const label = direction > 0 ? "positivo" : "negativo";
+      return { value: `${streak} dias`, note: `Racha actual en ${label}.` };
+    }
+  },
+  maxStreakPositive: {
+    title: "Maxima racha historica",
+    build: (balances, portfolioId) => {
+      if (balances.length < 2) {
+        return { value: "-", note: "No hay suficientes balances." };
+      }
+      const dailySeries = buildDailyGainSeries(balances, portfolioId).slice(1);
+      if (!dailySeries.length) return { value: "-", note: "No hay suficientes balances." };
+      let maxStreak = 0;
+      let current = 0;
+      dailySeries.forEach((item) => {
+        if (item.value > 0) {
+          current += 1;
+          if (current > maxStreak) maxStreak = current;
+        } else {
+          current = 0;
+        }
+      });
+      const note = maxStreak ? "Maxima racha en verde." : "Sin rachas positivas.";
+      return { value: `${maxStreak} dias`, note };
+    }
+  }
+};
+
+function getAnnualizedReturnFromAvgDaily(avgDailyPercent) {
+  if (avgDailyPercent === null || Number.isNaN(avgDailyPercent)) return null;
+  return Math.pow(1 + avgDailyPercent, 365) - 1;
+}
+
 function createKpi(label, value, delta) {
   const card = document.createElement("div");
   card.className = "kpi";
@@ -371,14 +501,21 @@ function createKpi(label, value, delta) {
 
 function renderSidebar() {
   elements.portfolioList.innerHTML = "";
+  if (!state.portfolios.length) {
+    const empty = document.createElement("div");
+    empty.className = "nav__empty";
+    empty.textContent = "No hay carteras todavía";
+    elements.portfolioList.appendChild(empty);
+  }
   state.portfolios.forEach((portfolio, index) => {
     const btn = document.createElement("button");
     btn.className = "nav__item";
+    btn.dataset.id = portfolio.id;
     btn.innerHTML = `<span class="color-dot" style="background:${getPortfolioColor(portfolio, index)}"></span>${portfolio.name}`;
     btn.addEventListener("click", () => openPortfolio(portfolio.id));
     elements.portfolioList.appendChild(btn);
   });
-  document.querySelectorAll(".nav__item").forEach((item) => item.classList.remove("active"));
+  setActiveNav(currentView);
 }
 
 function renderDashboard() {
@@ -403,6 +540,11 @@ function renderDashboard() {
   elements.dashboardKpis.appendChild(createKpi("Ganancia / Perdida", formatCurrency(totals.pnl), pnlPercent));
 
   elements.summaryTable.innerHTML = "";
+  if (!state.portfolios.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="table-empty" colspan="5">Agrega una cartera para ver el resumen.</td>`;
+    elements.summaryTable.appendChild(tr);
+  }
   state.portfolios.forEach((portfolio, index) => {
     const transactions = getPortfolioTransactions(portfolio.id);
     const aportesNetos = getAportesNetos(transactions);
@@ -541,6 +683,16 @@ function renderPortfolioBalancesTable(balances, portfolioId) {
   if (balancesPage > totalPages) balancesPage = totalPages;
   if (balancesPage < 1) balancesPage = 1;
 
+  if (!total) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="table-empty" colspan="5">No hay balances registrados.</td>`;
+    elements.balancesTable.appendChild(tr);
+    elements.balancesInfo.textContent = "No hay registros";
+    elements.balancesPrev.disabled = true;
+    elements.balancesNext.disabled = true;
+    return;
+  }
+
   const sorted = [...balances].sort((a, b) => new Date(b.date) - new Date(a.date));
   const start = (balancesPage - 1) * BALANCES_PER_PAGE;
   const pageItems = sorted.slice(start, start + BALANCES_PER_PAGE);
@@ -555,11 +707,20 @@ function renderPortfolioBalancesTable(balances, portfolioId) {
     tr.innerHTML = `
       <td>${balance.date}</td>
       <td>${formatCurrency(balance.value)}</td>
-      <td class="${dailyGain >= 0 ? "positive" : "negative"}">${prev ? formatCurrency(dailyGain) : "-"}</td>
-      <td class="${dailyGain >= 0 ? "positive" : "negative"}">${prev ? formatPercent(dailyPercent) : "-"}</td>
+      <td><span class="badge ${dailyGain >= 0 ? "badge--positive" : "badge--negative"}">${prev ? formatCurrency(dailyGain) : "-"}</span></td>
+      <td><span class="badge ${dailyGain >= 0 ? "badge--positive" : "badge--negative"}">${prev ? formatPercent(dailyPercent) : "-"}</span></td>
       <td>
-        <button class="btn btn--ghost" data-action="edit-balance" data-id="${balance.id}">Editar</button>
-        <button class="btn btn--danger" data-action="delete-balance" data-id="${balance.id}">Eliminar</button>
+        <button class="btn btn--icon btn--ghost" data-action="edit-balance" data-id="${balance.id}" aria-label="Editar balance">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5Z"></path>
+          </svg>
+        </button>
+        <button class="btn btn--icon btn--danger" data-action="delete-balance" data-id="${balance.id}" aria-label="Eliminar balance">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-2 6h10l-.7 11H7.7L7 9Z"></path>
+            <path d="M9 11h2v7H9v-7Zm4 0h2v7h-2v-7Z"></path>
+          </svg>
+        </button>
       </td>
     `;
     elements.balancesTable.appendChild(tr);
@@ -585,41 +746,70 @@ function renderPortfolio() {
   const balancesAll = getBalances(portfolio.id);
   const balancesFiltered = filterByRange(balancesAll, "date");
   const stats = getDailyStats(balancesAll, portfolio.id);
+  const annualized = getAnnualizedReturnFromAvgDaily(stats.avgDailyPercent);
 
   elements.portfolioKpis.innerHTML = "";
   elements.portfolioKpis.appendChild(createKpi("Aportes netos", formatCurrency(aportesNetos), null));
   elements.portfolioKpis.appendChild(createKpi("Valor actual", formatCurrency(valorActual), null));
-  elements.portfolioKpis.appendChild(createKpi("P/L", formatCurrency(pnl), pnlPercent));
+  elements.portfolioKpis.appendChild(createKpi("Ganancias totales", formatCurrency(pnl), pnlPercent));
   elements.portfolioKpis.appendChild(
-    createKpi("Ganancia diaria", formatCurrency(stats.dailyGain), balancesAll.length ? stats.dailyPercent : null)
+    createKpi("Rent. anualizada", annualized === null ? "-" : formatPercent(annualized), null)
+  );
+  elements.portfolioKpis.appendChild(
+    createKpi("Ultima ganancia", formatCurrency(stats.dailyGain), balancesAll.length ? stats.dailyPercent : null)
   );
   elements.portfolioKpis.appendChild(
     createKpi("Promedio diario", formatPercent(stats.avgDailyPercent), stats.avgDailyPercent)
   );
-  elements.portfolioKpis.appendChild(
-    createKpi("Acumulado", formatCurrency(stats.cumulativeGain), stats.cumulativePercent)
-  );
 
   renderPortfolioChart(balancesFiltered, portfolio.id);
   renderPortfolioBalancesTable(balancesFiltered, portfolio.id);
+  renderCustomWidgets(balancesAll, portfolio.id);
 
   const filteredTransactions = filterByRange(transactions, "date").filter((tx) => {
     const query = elements.searchInput.value.toLowerCase();
+    const typeFilter = elements.typeFilter.value;
+    const minRaw = elements.amountMin.value;
+    const maxRaw = elements.amountMax.value;
+    const min = minRaw === "" ? null : Number(minRaw);
+    const max = maxRaw === "" ? null : Number(maxRaw);
+
+    if (typeFilter !== "all" && tx.type !== typeFilter) return false;
+    if (min !== null && tx.amount < min) return false;
+    if (max !== null && tx.amount > max) return false;
+
     if (!query) return true;
-    return (tx.note || "").toLowerCase().includes(query);
+    const haystack = `${tx.note || ""} ${tx.type} ${tx.date} ${tx.amount}`.toLowerCase();
+    return haystack.includes(query);
   });
 
   elements.transactionsTable.innerHTML = "";
+  if (!filteredTransactions.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="table-empty" colspan="5">No hay movimientos para mostrar.</td>`;
+    elements.transactionsTable.appendChild(tr);
+    return;
+  }
   filteredTransactions.forEach((tx) => {
+    const typeClass = `badge--${tx.type}`;
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${tx.date}</td>
-      <td>${tx.type}</td>
+      <td><span class="badge ${typeClass}">${tx.type}</span></td>
       <td>${formatCurrency(tx.amount)}</td>
       <td>${tx.note || "-"}</td>
       <td>
-        <button class="btn btn--ghost" data-action="edit" data-id="${tx.id}">Editar</button>
-        <button class="btn btn--danger" data-action="delete" data-id="${tx.id}">Eliminar</button>
+        <button class="btn btn--icon btn--ghost" data-action="edit" data-id="${tx.id}" aria-label="Editar movimiento">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5Z"></path>
+          </svg>
+        </button>
+        <button class="btn btn--icon btn--danger" data-action="delete" data-id="${tx.id}" aria-label="Eliminar movimiento">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-2 6h10l-.7 11H7.7L7 9Z"></path>
+            <path d="M9 11h2v7H9v-7Zm4 0h2v7h-2v-7Z"></path>
+          </svg>
+        </button>
       </td>
     `;
     elements.transactionsTable.appendChild(tr);
@@ -627,10 +817,56 @@ function renderPortfolio() {
 }
 
 function switchView(view) {
+  currentView = view;
   elements.dashboardView.classList.toggle("active", view === "dashboard");
   elements.portfolioView.classList.toggle("active", view === "portfolio");
   elements.viewTitle.textContent = view === "dashboard" ? "Dashboard" : "Cartera";
   elements.viewSubtitle.textContent = view === "dashboard" ? "Resumen global" : "Detalle";
+  setActiveNav(view);
+}
+
+function renderCustomWidgets(balances, portfolioId) {
+  elements.customWidgets.innerHTML = "";
+  if (!state.customWidgets || !state.customWidgets.length) {
+    const empty = document.createElement("div");
+    empty.className = "table-empty";
+    empty.textContent = "No hay widgets personalizados.";
+    elements.customWidgets.appendChild(empty);
+    return;
+  }
+
+  state.customWidgets.forEach((widgetId) => {
+    const def = WIDGET_DEFS[widgetId];
+    if (!def) return;
+    const result = def.build(balances, portfolioId);
+    const card = document.createElement("div");
+    card.className = "widget";
+    card.innerHTML = `
+      <div class="widget__header">
+        <h5 class="widget__title">${def.title}</h5>
+        <button class="btn btn--icon btn--ghost" data-action="remove-widget" data-id="${widgetId}" aria-label="Eliminar widget">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 7l2-2 5 5 5-5 2 2-5 5 5 5-2 2-5-5-5 5-2-2 5-5-5-5Z"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="widget__value">${result.value}</div>
+      ${result.note ? `<div class="widget__note">${result.note}</div>` : ""}
+    `;
+    elements.customWidgets.appendChild(card);
+  });
+}
+
+function setActiveNav(view) {
+  document.querySelectorAll(".nav__item").forEach((item) => item.classList.remove("active"));
+  if (view === "dashboard") {
+    elements.dashboardNav.classList.add("active");
+    return;
+  }
+  if (view === "portfolio" && currentPortfolioId) {
+    const activeBtn = elements.portfolioList.querySelector(`[data-id="${currentPortfolioId}"]`);
+    if (activeBtn) activeBtn.classList.add("active");
+  }
 }
 
 function openPortfolio(id) {
@@ -775,6 +1011,8 @@ function handleTransactionAction(event) {
       openModal(transaction);
     }
     if (action === "delete") {
+      const confirmed = confirm("Eliminar este movimiento?");
+      if (!confirmed) return;
       state.transactions = state.transactions.filter((tx) => tx.id !== id);
       saveState();
       renderDashboard();
@@ -788,6 +1026,8 @@ function handleTransactionAction(event) {
       openBalanceModal(balance);
     }
     if (action === "delete-balance") {
+      const confirmed = confirm("Eliminar este balance?");
+      if (!confirmed) return;
       state.balances = state.balances.filter((item) => item.id !== id);
       saveState();
       renderPortfolio();
@@ -833,6 +1073,41 @@ function handleDashboardClick(event) {
   if (!event.target.closest("[data-view='dashboard']")) return;
   switchView("dashboard");
   renderDashboard();
+}
+
+function openWidgetModal() {
+  if (!currentPortfolioId) {
+    alert("Selecciona una cartera primero.");
+    return;
+  }
+  elements.widgetModal.classList.add("open");
+}
+
+function closeWidgetModal() {
+  elements.widgetModal.classList.remove("open");
+  elements.widgetForm.reset();
+}
+
+function handleAddWidget(event) {
+  event.preventDefault();
+  const selected = elements.widgetType.value;
+  if (!WIDGET_DEFS[selected]) return;
+  if (!state.customWidgets.includes(selected)) {
+    state.customWidgets.push(selected);
+    saveState();
+  }
+  closeWidgetModal();
+  renderPortfolio();
+}
+
+function handleRemoveWidget(event) {
+  const button = event.target.closest("button");
+  if (!button) return;
+  if (button.dataset.action !== "remove-widget") return;
+  const id = button.dataset.id;
+  state.customWidgets = state.customWidgets.filter((item) => item !== id);
+  saveState();
+  renderPortfolio();
 }
 
 function handleNewPortfolio(event) {
@@ -900,6 +1175,7 @@ function handleImport(event) {
       const parsed = JSON.parse(reader.result);
       if (parsed.portfolios && parsed.transactions) {
         if (!parsed.balances) parsed.balances = [];
+        if (!parsed.customWidgets) parsed.customWidgets = [];
         state = parsed;
         saveState();
         renderSidebar();
@@ -917,6 +1193,7 @@ function handleReset() {
   const confirmed = confirm("Seguro que quieres resetear los datos?");
   if (!confirmed) return;
   state = JSON.parse(JSON.stringify(demoData));
+  state.customWidgets = [];
   saveState();
   renderSidebar();
   renderDashboard();
@@ -954,12 +1231,20 @@ function init() {
   elements.chartMode.addEventListener("click", handleChartMode);
   elements.dashboardChartMode.addEventListener("click", handleDashboardChartMode);
   elements.searchInput.addEventListener("input", handleSearch);
+  elements.typeFilter.addEventListener("change", handleSearch);
+  elements.amountMin.addEventListener("input", handleSearch);
+  elements.amountMax.addEventListener("input", handleSearch);
+  elements.addWidgetBtn.addEventListener("click", openWidgetModal);
+  elements.closeWidgetModal.addEventListener("click", closeWidgetModal);
+  elements.cancelWidget.addEventListener("click", closeWidgetModal);
+  elements.widgetForm.addEventListener("submit", handleAddWidget);
+  elements.customWidgets.addEventListener("click", handleRemoveWidget);
   elements.settingsBtn.addEventListener("click", () => elements.settingsModal.classList.add("open"));
   elements.closeSettingsModal.addEventListener("click", () => elements.settingsModal.classList.remove("open"));
   elements.exportBtn.addEventListener("click", handleExport);
   elements.importInput.addEventListener("change", handleImport);
   elements.resetBtn.addEventListener("click", handleReset);
-  document.querySelector("[data-view='dashboard']").addEventListener("click", handleDashboardClick);
+  elements.dashboardNav.addEventListener("click", handleDashboardClick);
   elements.deletePortfolioBtn.addEventListener("click", handleDeletePortfolio);
 }
 
