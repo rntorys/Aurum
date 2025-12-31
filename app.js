@@ -1,5 +1,13 @@
 const STORAGE_KEY = "investmentHub:v1";
 const DEFAULT_COLORS = ["#22c55e", "#38bdf8", "#f97316", "#a855f7", "#f43f5e"];
+const DEFAULT_THEME = {
+  positive: "#22c55e",
+  negative: "#ef4444",
+  chart: "#22c55e"
+};
+const DEFAULT_PRIVACY = {
+  presentationMode: false
+};
 
 const demoData = {
   portfolios: [
@@ -44,6 +52,13 @@ let lineChart = null;
 let doughnutChart = null;
 let portfolioLineChart = null;
 let currentView = "dashboard";
+let balancesSort = { key: "date", direction: "desc" };
+let transactionsSort = { key: "date", direction: "desc" };
+let toastTimeout = null;
+let toastUndoAction = null;
+
+applyTheme(state.theme);
+applyPresentationMode(state.presentationMode);
 
 const elements = {
   sidebar: document.getElementById("sidebar"),
@@ -64,16 +79,22 @@ const elements = {
   portfolioKpis: document.getElementById("portfolioKpis"),
   portfolioLineChart: document.getElementById("portfolioLineChart"),
   balancesTable: document.querySelector("#balancesTable tbody"),
+  balancesTableHeader: document.querySelector("#balancesTable thead"),
   balancesInfo: document.getElementById("balancesInfo"),
   balancesPrev: document.getElementById("balancesPrev"),
   balancesNext: document.getElementById("balancesNext"),
   transactionsTable: document.querySelector("#transactionsTable tbody"),
+  transactionsTableHeader: document.querySelector("#transactionsTable thead"),
   rangeFilters: document.getElementById("rangeFilters"),
   chartMode: document.getElementById("chartMode"),
   searchInput: document.getElementById("searchInput"),
   typeFilter: document.getElementById("typeFilter"),
   amountMin: document.getElementById("amountMin"),
   amountMax: document.getElementById("amountMax"),
+  positiveColorInput: document.getElementById("positiveColorInput"),
+  negativeColorInput: document.getElementById("negativeColorInput"),
+  chartColorInput: document.getElementById("chartColorInput"),
+  presentationToggle: document.getElementById("presentationToggle"),
   customWidgets: document.getElementById("customWidgets"),
   addWidgetBtn: document.getElementById("addWidgetBtn"),
   widgetModal: document.getElementById("widgetModal"),
@@ -81,9 +102,13 @@ const elements = {
   widgetForm: document.getElementById("widgetForm"),
   widgetType: document.getElementById("widgetType"),
   cancelWidget: document.getElementById("cancelWidget"),
+  toast: document.getElementById("toast"),
+  toastMessage: document.getElementById("toastMessage"),
+  toastUndoBtn: document.getElementById("toastUndoBtn"),
   settingsBtn: document.getElementById("settingsBtn"),
   settingsModal: document.getElementById("settingsModal"),
   closeSettingsModal: document.getElementById("closeSettingsModal"),
+  doneSettingsBtn: document.getElementById("doneSettingsBtn"),
   addMovementBtn: document.getElementById("addMovementBtn"),
   addBalanceBtn: document.getElementById("addBalanceBtn"),
   movementModal: document.getElementById("movementModal"),
@@ -125,12 +150,15 @@ function loadState() {
   if (!raw) {
     const seed = JSON.parse(JSON.stringify(demoData));
     seed.customWidgets = [];
+    seed.theme = { ...DEFAULT_THEME };
     return seed;
   }
   try {
     const parsed = JSON.parse(raw);
     if (!parsed.balances) parsed.balances = [];
     if (!parsed.customWidgets) parsed.customWidgets = [];
+    if (!parsed.theme) parsed.theme = { ...DEFAULT_THEME };
+    if (parsed.presentationMode === undefined) parsed.presentationMode = DEFAULT_PRIVACY.presentationMode;
     parsed.portfolios = parsed.portfolios.map((portfolio, index) => ({
       ...portfolio,
       color: portfolio.color || DEFAULT_COLORS[index % DEFAULT_COLORS.length]
@@ -139,6 +167,8 @@ function loadState() {
   } catch {
     const seed = JSON.parse(JSON.stringify(demoData));
     seed.customWidgets = [];
+    seed.theme = { ...DEFAULT_THEME };
+    seed.presentationMode = DEFAULT_PRIVACY.presentationMode;
     return seed;
   }
 }
@@ -157,6 +187,46 @@ function formatCurrency(value) {
 
 function formatPercent(value) {
   return `${(value * 100).toFixed(2)}%`;
+}
+
+function hexToRgb(hex) {
+  const trimmed = hex.replace("#", "");
+  const normalized = trimmed.length === 3
+    ? trimmed.split("").map((char) => char + char).join("")
+    : trimmed;
+  if (normalized.length !== 6) return "34, 197, 94";
+  const num = parseInt(normalized, 16);
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return `${r}, ${g}, ${b}`;
+}
+
+function applyTheme(theme) {
+  const active = theme || DEFAULT_THEME;
+  const root = document.documentElement;
+  root.style.setProperty("--positive", active.positive);
+  root.style.setProperty("--negative", active.negative);
+  root.style.setProperty("--chart", active.chart || active.positive);
+  root.style.setProperty("--positive-rgb", hexToRgb(active.positive));
+  root.style.setProperty("--negative-rgb", hexToRgb(active.negative));
+  root.style.setProperty("--accent", active.positive);
+}
+
+function applyPresentationMode(enabled) {
+  document.body.classList.toggle("presentation-mode", Boolean(enabled));
+}
+
+function syncThemeInputs() {
+  if (!elements.positiveColorInput) return;
+  elements.positiveColorInput.value = state.theme.positive;
+  elements.negativeColorInput.value = state.theme.negative;
+  elements.chartColorInput.value = state.theme.chart || state.theme.positive;
+}
+
+function syncPresentationToggle() {
+  if (!elements.presentationToggle) return;
+  elements.presentationToggle.checked = Boolean(state.presentationMode);
 }
 
 function getPortfolioTransactions(portfolioId) {
@@ -381,69 +451,73 @@ const WIDGET_DEFS = {
     title: "Ultimos 30 dias",
     build: (balances, portfolioId) => {
       if (balances.length < 2) {
-        return { value: "-", note: "No hay suficientes balances." };
+        return { value: "-", note: "No hay suficientes balances.", tone: "neutral" };
       }
       const latestDate = new Date(balances[balances.length - 1].date);
       const from = new Date(latestDate);
       from.setDate(latestDate.getDate() - 30);
       const windowBalances = balances.filter((item) => new Date(item.date) >= from);
       if (windowBalances.length < 2) {
-        return { value: "-", note: "No hay suficientes registros en 30 dias." };
+        return { value: "-", note: "No hay suficientes registros en 30 dias.", tone: "neutral" };
       }
       const dailySeries = buildDailyGainSeries(windowBalances, portfolioId);
       const sum = dailySeries.reduce((acc, item) => acc + item.value, 0);
       const note =
         windowBalances.length < 30 ? `Solo ${windowBalances.length} registros en el rango.` : null;
-      return { value: formatCurrency(sum), note };
+      const tone = sum > 0 ? "positive" : sum < 0 ? "negative" : "neutral";
+      return { value: formatCurrency(sum), note, tone };
     }
   },
   avgDailyValue: {
     title: "Promedio diario numerico",
     build: (balances, portfolioId) => {
       if (balances.length < 2) {
-        return { value: "-", note: "No hay suficientes balances." };
+        return { value: "-", note: "No hay suficientes balances.", tone: "neutral" };
       }
       const dailySeries = buildDailyGainSeries(balances, portfolioId);
       const sum = dailySeries.reduce((acc, item) => acc + item.value, 0);
       const avg = sum / Math.max(dailySeries.length - 1, 1);
-      return { value: formatCurrency(avg), note: null };
+      const tone = avg > 0 ? "positive" : avg < 0 ? "negative" : "neutral";
+      return { value: formatCurrency(avg), note: null, tone };
     }
   },
   bestDay: {
     title: "Mejor dia",
     build: (balances, portfolioId) => {
       if (balances.length < 2) {
-        return { value: "-", note: "No hay suficientes balances." };
+        return { value: "-", note: "No hay suficientes balances.", tone: "neutral" };
       }
       const dailySeries = buildDailyGainSeries(balances, portfolioId).slice(1);
-      if (!dailySeries.length) return { value: "-", note: "No hay suficientes balances." };
+      if (!dailySeries.length) return { value: "-", note: "No hay suficientes balances.", tone: "neutral" };
       const best = dailySeries.reduce((acc, item) => (item.value > acc.value ? item : acc), dailySeries[0]);
-      return { value: formatCurrency(best.value), note: `Fecha: ${best.date}` };
+      const tone = best.value > 0 ? "positive" : best.value < 0 ? "negative" : "neutral";
+      return { value: formatCurrency(best.value), note: `Fecha: ${best.date}`, tone };
     }
   },
   worstDay: {
     title: "Peor dia",
     build: (balances, portfolioId) => {
       if (balances.length < 2) {
-        return { value: "-", note: "No hay suficientes balances." };
+        return { value: "-", note: "No hay suficientes balances.", tone: "neutral" };
       }
       const dailySeries = buildDailyGainSeries(balances, portfolioId).slice(1);
-      if (!dailySeries.length) return { value: "-", note: "No hay suficientes balances." };
+      if (!dailySeries.length) return { value: "-", note: "No hay suficientes balances.", tone: "neutral" };
       const worst = dailySeries.reduce((acc, item) => (item.value < acc.value ? item : acc), dailySeries[0]);
-      return { value: formatCurrency(worst.value), note: `Fecha: ${worst.date}` };
+      const tone = worst.value > 0 ? "positive" : worst.value < 0 ? "negative" : "neutral";
+      return { value: formatCurrency(worst.value), note: `Fecha: ${worst.date}`, tone };
     }
   },
   streakCurrent: {
     title: "Racha actual",
     build: (balances, portfolioId) => {
       if (balances.length < 2) {
-        return { value: "-", note: "No hay suficientes balances." };
+        return { value: "-", note: "No hay suficientes balances.", tone: "neutral" };
       }
       const dailySeries = buildDailyGainSeries(balances, portfolioId).slice(1);
-      if (!dailySeries.length) return { value: "-", note: "No hay suficientes balances." };
+      if (!dailySeries.length) return { value: "-", note: "No hay suficientes balances.", tone: "neutral" };
       const last = dailySeries[dailySeries.length - 1];
       if (last.value === 0) {
-        return { value: "0 dias", note: "Ultimo dia en cero." };
+        return { value: "0 dias", note: "Ultimo dia en cero.", tone: "neutral" };
       }
       const direction = last.value > 0 ? 1 : -1;
       let streak = 0;
@@ -455,17 +529,18 @@ const WIDGET_DEFS = {
         }
       }
       const label = direction > 0 ? "positivo" : "negativo";
-      return { value: `${streak} dias`, note: `Racha actual en ${label}.` };
+      const tone = direction > 0 ? "positive" : "negative";
+      return { value: `${streak} dias`, note: `Racha actual en ${label}.`, tone };
     }
   },
   maxStreakPositive: {
     title: "Maxima racha historica",
     build: (balances, portfolioId) => {
       if (balances.length < 2) {
-        return { value: "-", note: "No hay suficientes balances." };
+        return { value: "-", note: "No hay suficientes balances.", tone: "neutral" };
       }
       const dailySeries = buildDailyGainSeries(balances, portfolioId).slice(1);
-      if (!dailySeries.length) return { value: "-", note: "No hay suficientes balances." };
+      if (!dailySeries.length) return { value: "-", note: "No hay suficientes balances.", tone: "neutral" };
       let maxStreak = 0;
       let current = 0;
       dailySeries.forEach((item) => {
@@ -477,7 +552,8 @@ const WIDGET_DEFS = {
         }
       });
       const note = maxStreak ? "Maxima racha en verde." : "Sin rachas positivas.";
-      return { value: `${maxStreak} dias`, note };
+      const tone = maxStreak > 0 ? "positive" : "neutral";
+      return { value: `${maxStreak} dias`, note, tone };
     }
   }
 };
@@ -487,17 +563,70 @@ function getAnnualizedReturnFromAvgDaily(avgDailyPercent) {
   return Math.pow(1 + avgDailyPercent, 365) - 1;
 }
 
-function createKpi(label, value, delta) {
+const KPI_TOOLTIPS = {
+  "Capital neto aportado": "Suma de aportes menos retiros.",
+  "Aportes netos": "Aportes menos retiros de la cartera.",
+  "Valor actual": "Ultimo balance registrado o aportes + flujo neto.",
+  "Ganancia / Perdida": "Valor actual menos aportes netos.",
+  "Ganancias totales": "Valor actual menos aportes netos.",
+  "Rent. anualizada": "Promedio diario anualizado.",
+  "Ultima ganancia": "Ultimo cambio diario ajustado por aportes.",
+  "Promedio diario": "Promedio de ganancias diarias (%)."
+};
+
+function createKpi(label, value, delta, tooltip) {
   const card = document.createElement("div");
   card.className = "kpi";
   const trendClass = delta >= 0 ? "positive" : "negative";
+  const tip = tooltip || KPI_TOOLTIPS[label];
   card.innerHTML = `
-    <span>${label}</span>
-    <strong>${value}</strong>
-    ${delta !== null ? `<div class="${trendClass}">${formatPercent(delta)}</div>` : ""}
+    <span class="kpi__label">
+      ${label}
+      ${tip ? `<span class="kpi__info" data-tooltip="${tip}">i</span>` : ""}
+    </span>
+    <strong class="sensitive">${value}</strong>
+    ${delta !== null ? `<div class="${trendClass} sensitive">${formatPercent(delta)}</div>` : ""}
   `;
   return card;
 }
+
+function updateSortIndicators(headerEl, sortConfig) {
+  if (!headerEl) return;
+  headerEl.querySelectorAll("th.sortable").forEach((th) => {
+    th.classList.remove("sort-active", "asc");
+  });
+  const active = headerEl.querySelector(`th[data-sort="${sortConfig.key}"]`);
+  if (!active) return;
+  active.classList.add("sort-active");
+  if (sortConfig.direction === "asc") active.classList.add("asc");
+}
+
+function getDefaultSortDirection(key) {
+  return ["date", "amount", "value", "dailyGain", "dailyPercent"].includes(key) ? "desc" : "asc";
+}
+
+function showUndoToast(message, onUndo) {
+  if (!elements.toast) return;
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastUndoAction = onUndo || null;
+  elements.toastMessage.textContent = message;
+  elements.toastUndoBtn.style.display = onUndo ? "inline-flex" : "none";
+  elements.toast.classList.add("show");
+  toastTimeout = setTimeout(() => {
+    hideToast();
+  }, 5000);
+}
+
+function hideToast() {
+  if (!elements.toast) return;
+  elements.toast.classList.remove("show");
+  toastUndoAction = null;
+  if (toastTimeout) {
+    clearTimeout(toastTimeout);
+    toastTimeout = null;
+  }
+}
+
 
 function renderSidebar() {
   elements.portfolioList.innerHTML = "";
@@ -535,7 +664,9 @@ function renderDashboard() {
   );
   const pnlPercent = getPnLPercent(totals.pnl, totals.aportesNetos);
 
-  elements.dashboardKpis.appendChild(createKpi("Capital neto aportado", formatCurrency(totals.aportesNetos), null));
+  elements.dashboardKpis.appendChild(
+    createKpi("Capital neto aportado", formatCurrency(totals.aportesNetos), null)
+  );
   elements.dashboardKpis.appendChild(createKpi("Valor actual", formatCurrency(totals.valorActual), null));
   elements.dashboardKpis.appendChild(createKpi("Ganancia / Perdida", formatCurrency(totals.pnl), pnlPercent));
 
@@ -554,9 +685,9 @@ function renderDashboard() {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><span class="color-dot" style="background:${getPortfolioColor(portfolio, index)}"></span> ${portfolio.name}</td>
-      <td>${formatCurrency(aportesNetos)}</td>
-      <td>${formatCurrency(valorActual)}</td>
-      <td><span class="${pnl >= 0 ? "positive" : "negative"}">${formatCurrency(pnl)} (${formatPercent(pnlPercentLocal)})</span></td>
+      <td class="sensitive">${formatCurrency(aportesNetos)}</td>
+      <td class="sensitive">${formatCurrency(valorActual)}</td>
+      <td><span class="${pnl >= 0 ? "positive" : "negative"} sensitive">${formatCurrency(pnl)} (${formatPercent(pnlPercentLocal)})</span></td>
       <td>${getLastBalanceDate(portfolio.id)}</td>
     `;
     elements.summaryTable.appendChild(tr);
@@ -574,7 +705,8 @@ function renderCharts() {
     : balances;
   const labels = series.map((item) => item.date);
   const data = series.map((item) => item.value);
-  const color = dashboardChartMode === "balance" ? "#38bdf8" : "#22c55e";
+  const chartColor = state.theme.chart || state.theme.positive;
+  const chartFill = `rgba(${hexToRgb(chartColor)}, 0.2)`;
 
   if (lineChart) lineChart.destroy();
   lineChart = new Chart(elements.lineChart, {
@@ -589,10 +721,8 @@ function renderCharts() {
             ? "Ganancia diaria"
             : "Balance total",
           data,
-          borderColor: color,
-          backgroundColor: dashboardChartMode === "balance"
-            ? "rgba(56, 189, 248, 0.2)"
-            : "rgba(34, 197, 94, 0.2)",
+          borderColor: chartColor,
+          backgroundColor: chartFill,
           tension: 0.3
         }
       ]
@@ -636,7 +766,8 @@ function renderPortfolioChart(balances, portfolioId) {
 
   const labels = series.map((item) => item.date);
   const data = series.map((item) => item.value);
-  const color = chartMode === "balance" ? "#38bdf8" : "#22c55e";
+  const chartColor = state.theme.chart || state.theme.positive;
+  const chartFill = `rgba(${hexToRgb(chartColor)}, 0.2)`;
   const label =
     chartMode === "cumulative"
       ? "Ganancia acumulada"
@@ -653,10 +784,8 @@ function renderPortfolioChart(balances, portfolioId) {
         {
           label,
           data,
-          borderColor: color,
-          backgroundColor: chartMode === "balance"
-            ? "rgba(56, 189, 248, 0.2)"
-            : "rgba(34, 197, 94, 0.2)",
+          borderColor: chartColor,
+          backgroundColor: chartFill,
           tension: 0.3
         }
       ]
@@ -693,22 +822,44 @@ function renderPortfolioBalancesTable(balances, portfolioId) {
     return;
   }
 
-  const sorted = [...balances].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const rows = balances.map((balance, index) => {
+    const prev = index <= 0 ? null : balances[index - 1];
+    const aporteDia = netMap.get(balance.date) || 0;
+    const dailyGain = prev ? balance.value - prev.value - aporteDia : null;
+    const dailyPercent = prev ? dailyGain / Math.max(prev.value, 1) : null;
+    return {
+      balance,
+      dateValue: new Date(balance.date).getTime(),
+      value: balance.value,
+      dailyGain,
+      dailyPercent
+    };
+  });
+
+  const sorted = [...rows].sort((a, b) => {
+    const key = balancesSort.key;
+    const dir = balancesSort.direction === "asc" ? 1 : -1;
+    const aVal = key === "date" ? a.dateValue : a[key];
+    const bVal = key === "date" ? b.dateValue : b[key];
+    if (aVal === bVal) return 0;
+    if (aVal === null || aVal === undefined) return 1;
+    if (bVal === null || bVal === undefined) return -1;
+    return aVal > bVal ? dir : -dir;
+  });
+
+  updateSortIndicators(elements.balancesTableHeader, balancesSort);
+
   const start = (balancesPage - 1) * BALANCES_PER_PAGE;
   const pageItems = sorted.slice(start, start + BALANCES_PER_PAGE);
 
-  pageItems.forEach((balance) => {
-    const originalIndex = balances.findIndex((item) => item.id === balance.id);
-    const prev = originalIndex <= 0 ? null : balances[originalIndex - 1];
-    const aporteDia = netMap.get(balance.date) || 0;
-    const dailyGain = prev ? balance.value - prev.value - aporteDia : 0;
-    const dailyPercent = prev ? dailyGain / Math.max(prev.value, 1) : 0;
+  pageItems.forEach((row) => {
+    const { balance, dailyGain, dailyPercent } = row;
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${balance.date}</td>
-      <td>${formatCurrency(balance.value)}</td>
-      <td><span class="badge ${dailyGain >= 0 ? "badge--positive" : "badge--negative"}">${prev ? formatCurrency(dailyGain) : "-"}</span></td>
-      <td><span class="badge ${dailyGain >= 0 ? "badge--positive" : "badge--negative"}">${prev ? formatPercent(dailyPercent) : "-"}</span></td>
+      <td class="sensitive">${formatCurrency(balance.value)}</td>
+      <td><span class="badge ${dailyGain === null ? "badge--neutral" : dailyGain >= 0 ? "badge--positive" : "badge--negative"} sensitive">${dailyGain === null ? "-" : formatCurrency(dailyGain)}</span></td>
+      <td><span class="badge ${dailyGain === null ? "badge--neutral" : dailyGain >= 0 ? "badge--positive" : "badge--negative"} sensitive">${dailyPercent === null ? "-" : formatPercent(dailyPercent)}</span></td>
       <td>
         <button class="btn btn--icon btn--ghost" data-action="edit-balance" data-id="${balance.id}" aria-label="Editar balance">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -783,20 +934,44 @@ function renderPortfolio() {
     return haystack.includes(query);
   });
 
+  const sortedTransactions = [...filteredTransactions].sort((a, b) => {
+    const key = transactionsSort.key;
+    const dir = transactionsSort.direction === "asc" ? 1 : -1;
+    let aVal;
+    let bVal;
+    if (key === "date") {
+      aVal = new Date(a.date).getTime();
+      bVal = new Date(b.date).getTime();
+    } else if (key === "note") {
+      aVal = (a.note || "").toLowerCase();
+      bVal = (b.note || "").toLowerCase();
+    } else if (key === "type") {
+      aVal = a.type;
+      bVal = b.type;
+    } else {
+      aVal = a[key];
+      bVal = b[key];
+    }
+    if (aVal === bVal) return 0;
+    return aVal > bVal ? dir : -dir;
+  });
+
+  updateSortIndicators(elements.transactionsTableHeader, transactionsSort);
+
   elements.transactionsTable.innerHTML = "";
-  if (!filteredTransactions.length) {
+  if (!sortedTransactions.length) {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td class="table-empty" colspan="5">No hay movimientos para mostrar.</td>`;
     elements.transactionsTable.appendChild(tr);
     return;
   }
-  filteredTransactions.forEach((tx) => {
+  sortedTransactions.forEach((tx) => {
     const typeClass = `badge--${tx.type}`;
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${tx.date}</td>
       <td><span class="badge ${typeClass}">${tx.type}</span></td>
-      <td>${formatCurrency(tx.amount)}</td>
+      <td class="sensitive">${formatCurrency(tx.amount)}</td>
       <td>${tx.note || "-"}</td>
       <td>
         <button class="btn btn--icon btn--ghost" data-action="edit" data-id="${tx.id}" aria-label="Editar movimiento">
@@ -840,7 +1015,8 @@ function renderCustomWidgets(balances, portfolioId) {
     if (!def) return;
     const result = def.build(balances, portfolioId);
     const card = document.createElement("div");
-    card.className = "widget";
+    const toneClass = result.tone ? `widget--${result.tone}` : "widget--neutral";
+    card.className = `widget ${toneClass}`;
     card.innerHTML = `
       <div class="widget__header">
         <h5 class="widget__title">${def.title}</h5>
@@ -850,7 +1026,7 @@ function renderCustomWidgets(balances, portfolioId) {
           </svg>
         </button>
       </div>
-      <div class="widget__value">${result.value}</div>
+      <div class="widget__value sensitive">${result.value}</div>
       ${result.note ? `<div class="widget__note">${result.note}</div>` : ""}
     `;
     elements.customWidgets.appendChild(card);
@@ -1013,10 +1189,18 @@ function handleTransactionAction(event) {
     if (action === "delete") {
       const confirmed = confirm("Eliminar este movimiento?");
       if (!confirmed) return;
-      state.transactions = state.transactions.filter((tx) => tx.id !== id);
+      const index = state.transactions.findIndex((tx) => tx.id === id);
+      if (index < 0) return;
+      const removed = state.transactions.splice(index, 1)[0];
       saveState();
       renderDashboard();
       renderPortfolio();
+      showUndoToast("Movimiento eliminado.", () => {
+        state.transactions.splice(index, 0, removed);
+        saveState();
+        renderDashboard();
+        renderPortfolio();
+      });
     }
   }
 
@@ -1028,9 +1212,16 @@ function handleTransactionAction(event) {
     if (action === "delete-balance") {
       const confirmed = confirm("Eliminar este balance?");
       if (!confirmed) return;
-      state.balances = state.balances.filter((item) => item.id !== id);
+      const index = state.balances.findIndex((item) => item.id === id);
+      if (index < 0) return;
+      const removed = state.balances.splice(index, 1)[0];
       saveState();
       renderPortfolio();
+      showUndoToast("Balance eliminado.", () => {
+        state.balances.splice(index, 0, removed);
+        saveState();
+        renderPortfolio();
+      });
     }
   }
 }
@@ -1062,6 +1253,47 @@ function handleDashboardChartMode(event) {
 
 function handleSearch() {
   renderPortfolio();
+}
+
+function handleBalancesSort(event) {
+  const th = event.target.closest("th[data-sort]");
+  if (!th) return;
+  const key = th.dataset.sort;
+  const direction =
+    balancesSort.key === key ? (balancesSort.direction === "asc" ? "desc" : "asc") : getDefaultSortDirection(key);
+  balancesSort = { key, direction };
+  balancesPage = 1;
+  renderPortfolio();
+}
+
+function handleTransactionsSort(event) {
+  const th = event.target.closest("th[data-sort]");
+  if (!th) return;
+  const key = th.dataset.sort;
+  const direction =
+    transactionsSort.key === key
+      ? (transactionsSort.direction === "asc" ? "desc" : "asc")
+      : getDefaultSortDirection(key);
+  transactionsSort = { key, direction };
+  renderPortfolio();
+}
+
+function handleThemeChange() {
+  state.theme = {
+    positive: elements.positiveColorInput.value || DEFAULT_THEME.positive,
+    negative: elements.negativeColorInput.value || DEFAULT_THEME.negative,
+    chart: elements.chartColorInput.value || DEFAULT_THEME.chart
+  };
+  applyTheme(state.theme);
+  saveState();
+  renderDashboard();
+  if (currentPortfolioId) renderPortfolio();
+}
+
+function handlePresentationToggle() {
+  state.presentationMode = elements.presentationToggle.checked;
+  applyPresentationMode(state.presentationMode);
+  saveState();
 }
 
 function handleBalancesPagination(direction) {
@@ -1176,7 +1408,13 @@ function handleImport(event) {
       if (parsed.portfolios && parsed.transactions) {
         if (!parsed.balances) parsed.balances = [];
         if (!parsed.customWidgets) parsed.customWidgets = [];
+        if (!parsed.theme) parsed.theme = { ...DEFAULT_THEME };
+        if (parsed.presentationMode === undefined) parsed.presentationMode = DEFAULT_PRIVACY.presentationMode;
         state = parsed;
+        applyTheme(state.theme);
+        syncThemeInputs();
+        applyPresentationMode(state.presentationMode);
+        syncPresentationToggle();
         saveState();
         renderSidebar();
         renderDashboard();
@@ -1192,18 +1430,43 @@ function handleImport(event) {
 function handleReset() {
   const confirmed = confirm("Seguro que quieres resetear los datos?");
   if (!confirmed) return;
+  const prevState = JSON.parse(JSON.stringify(state));
   state = JSON.parse(JSON.stringify(demoData));
   state.customWidgets = [];
+  state.theme = { ...DEFAULT_THEME };
+  state.presentationMode = DEFAULT_PRIVACY.presentationMode;
+  applyTheme(state.theme);
+  syncThemeInputs();
+  applyPresentationMode(state.presentationMode);
+  syncPresentationToggle();
   saveState();
   renderSidebar();
   renderDashboard();
   switchView("dashboard");
+  showUndoToast("Datos reseteados.", () => {
+    state = JSON.parse(JSON.stringify(prevState));
+    applyTheme(state.theme || DEFAULT_THEME);
+    applyPresentationMode(state.presentationMode);
+    syncThemeInputs();
+    syncPresentationToggle();
+    saveState();
+    renderSidebar();
+    renderDashboard();
+    if (currentPortfolioId && !state.portfolios.find((p) => p.id === currentPortfolioId)) {
+      currentPortfolioId = null;
+      switchView("dashboard");
+    } else if (currentPortfolioId) {
+      renderPortfolio();
+    }
+  });
 }
 
 function init() {
   renderSidebar();
   renderDashboard();
   switchView("dashboard");
+  syncThemeInputs();
+  syncPresentationToggle();
   elements.toggleSidebar.addEventListener("click", () => {
     elements.sidebar.classList.toggle("show");
   });
@@ -1227,6 +1490,8 @@ function init() {
   elements.balancesTable.addEventListener("click", handleTransactionAction);
   elements.balancesPrev.addEventListener("click", () => handleBalancesPagination(-1));
   elements.balancesNext.addEventListener("click", () => handleBalancesPagination(1));
+  elements.balancesTableHeader.addEventListener("click", handleBalancesSort);
+  elements.transactionsTableHeader.addEventListener("click", handleTransactionsSort);
   elements.rangeFilters.addEventListener("click", handleRangeFilter);
   elements.chartMode.addEventListener("click", handleChartMode);
   elements.dashboardChartMode.addEventListener("click", handleDashboardChartMode);
@@ -1234,6 +1499,11 @@ function init() {
   elements.typeFilter.addEventListener("change", handleSearch);
   elements.amountMin.addEventListener("input", handleSearch);
   elements.amountMax.addEventListener("input", handleSearch);
+  elements.positiveColorInput.addEventListener("input", handleThemeChange);
+  elements.negativeColorInput.addEventListener("input", handleThemeChange);
+  elements.chartColorInput.addEventListener("input", handleThemeChange);
+  elements.presentationToggle.addEventListener("change", handlePresentationToggle);
+  elements.doneSettingsBtn.addEventListener("click", () => elements.settingsModal.classList.remove("open"));
   elements.addWidgetBtn.addEventListener("click", openWidgetModal);
   elements.closeWidgetModal.addEventListener("click", closeWidgetModal);
   elements.cancelWidget.addEventListener("click", closeWidgetModal);
@@ -1241,6 +1511,10 @@ function init() {
   elements.customWidgets.addEventListener("click", handleRemoveWidget);
   elements.settingsBtn.addEventListener("click", () => elements.settingsModal.classList.add("open"));
   elements.closeSettingsModal.addEventListener("click", () => elements.settingsModal.classList.remove("open"));
+  elements.toastUndoBtn.addEventListener("click", () => {
+    if (toastUndoAction) toastUndoAction();
+    hideToast();
+  });
   elements.exportBtn.addEventListener("click", handleExport);
   elements.importInput.addEventListener("change", handleImport);
   elements.resetBtn.addEventListener("click", handleReset);
