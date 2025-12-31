@@ -68,7 +68,7 @@
           </section>
 
           <div class="chart-grid">
-            <section class="card">
+            <section class="card card--chart">
               <div class="card__header">
                 <h3>Evolucion total</h3>
                 <div class="segmented" id="dashboardChartMode">
@@ -79,7 +79,7 @@
               </div>
               <canvas id="lineChart" height="220"></canvas>
             </section>
-            <section class="card">
+            <section class="card card--chart">
               <div class="card__header">
                 <h3>Distribucion por cartera</h3>
               </div>
@@ -103,7 +103,7 @@
           </div>
           <div class="widget-grid" id="customWidgets"></div>
 
-          <section class="card">
+          <section class="card card--chart">
             <div class="card__header">
               <h3>Evolucion diaria</h3>
               <div class="segmented" id="chartMode">
@@ -134,10 +134,10 @@
               <table class="table" id="balancesTable">
                 <thead>
                   <tr>
-                    <th>Fecha</th>
-                    <th>Balance (CLP)</th>
-                    <th>Ganancia diaria</th>
-                    <th>% diario</th>
+                    <th class="sortable" data-sort="date">Fecha</th>
+                    <th class="sortable" data-sort="value">Balance (CLP)</th>
+                    <th class="sortable" data-sort="dailyGain">Ganancia diaria</th>
+                    <th class="sortable" data-sort="dailyPercent">% diario</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
@@ -175,10 +175,10 @@
               <table class="table" id="transactionsTable">
                 <thead>
                   <tr>
-                    <th>Fecha</th>
-                    <th>Tipo</th>
-                    <th>Monto</th>
-                    <th>Nota</th>
+                    <th class="sortable" data-sort="date">Fecha</th>
+                    <th class="sortable" data-sort="type">Tipo</th>
+                    <th class="sortable" data-sort="amount">Monto</th>
+                    <th class="sortable" data-sort="note">Nota</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
@@ -288,6 +288,29 @@
           Importar JSON
           <input type="file" id="importInput" accept="application/json" />
         </label>
+        <div class="settings-group settings-group--compact">
+          <div class="settings-title">Colores del dashboard</div>
+          <label class="settings-field">
+            <span>Positivos</span>
+            <input type="color" id="positiveColorInput" value="#22c55e" />
+          </label>
+          <label class="settings-field">
+            <span>Negativos</span>
+            <input type="color" id="negativeColorInput" value="#ef4444" />
+          </label>
+          <label class="settings-field">
+            <span>Graficos</span>
+            <input type="color" id="chartColorInput" value="#22c55e" />
+          </label>
+        </div>
+        <div class="settings-group">
+          <div class="settings-title">Privacidad</div>
+          <label class="settings-toggle">
+            <input type="checkbox" id="presentationToggle" />
+            <span>Modo presentacion</span>
+          </label>
+        </div>
+        <button class="btn btn--primary" id="doneSettingsBtn">Hecho</button>
         <button class="btn btn--danger" id="resetBtn">Resetear datos</button>
       </div>
     </div>
@@ -317,6 +340,11 @@
         </div>
       </form>
     </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    <span id="toastMessage"></span>
+    <button class="btn btn--ghost" id="toastUndoBtn">Deshacer</button>
   </div>
 
   <script src="app.js"></script>
