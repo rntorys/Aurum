@@ -241,6 +241,17 @@
           <input type="text" id="portfolioNameInput" required />
         </label>
         <label>
+          Moneda
+          <select id="portfolioCurrencyInput">
+            <option value="CLP">CLP</option>
+            <option value="USD">USD</option>
+          </select>
+        </label>
+        <label id="portfolioUsdRateField">
+          Valor USD en CLP
+          <input type="number" id="portfolioUsdRateInput" min="1" step="0.01" placeholder="Ej: 900" />
+        </label>
+        <label>
           Color representativo
           <input type="color" id="portfolioColorInput" value="#22c55e" />
         </label>
