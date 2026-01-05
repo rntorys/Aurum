@@ -275,10 +275,13 @@ function buildNetAporteMap(portfolioId) {
 
 function buildGlobalNetAporteMap() {
   const map = new Map();
+  const portfolioMap = new Map(state.portfolios.map((item) => [item.id, item]));
   state.transactions.forEach((tx) => {
     if (tx.type !== "aporte" && tx.type !== "retiro") return;
+    const portfolio = portfolioMap.get(tx.portfolioId);
+    const amountClp = portfolio ? convertToClp(tx.amount, portfolio) : tx.amount;
     const current = map.get(tx.date) || 0;
-    const delta = tx.type === "aporte" ? tx.amount : -tx.amount;
+    const delta = tx.type === "aporte" ? amountClp : -amountClp;
     map.set(tx.date, current + delta);
   });
   return map;
@@ -1148,7 +1151,7 @@ function openPortfolioModal() {
   elements.portfolioSubmitBtn.textContent = "Crear";
   elements.portfolioNameInput.value = "";
   elements.portfolioCurrencyInput.value = DEFAULT_CURRENCY;
-  elements.portfolioUsdRateInput.value = DEFAULT_USD_RATE;
+  elements.portfolioUsdRateInput.value = DEFAULT_USD_RATE.toFixed(2);
   elements.portfolioUsdRateField.classList.toggle("show", DEFAULT_CURRENCY === "USD");
   elements.portfolioUsdRateInput.required = DEFAULT_CURRENCY === "USD";
   elements.portfolioColorInput.value = DEFAULT_COLORS[state.portfolios.length % DEFAULT_COLORS.length];
@@ -1167,7 +1170,7 @@ function openRenamePortfolioModal() {
   elements.portfolioSubmitBtn.textContent = "Guardar";
   elements.portfolioNameInput.value = portfolio.name;
   elements.portfolioCurrencyInput.value = getPortfolioCurrency(portfolio);
-  elements.portfolioUsdRateInput.value = getPortfolioUsdRate(portfolio);
+  elements.portfolioUsdRateInput.value = getPortfolioUsdRate(portfolio).toFixed(2);
   const isUsd = getPortfolioCurrency(portfolio) === "USD";
   elements.portfolioUsdRateField.classList.toggle("show", isUsd);
   elements.portfolioUsdRateInput.required = isUsd;
