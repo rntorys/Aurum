@@ -837,6 +837,14 @@ body {
   color: var(--text);
 }
 
+#portfolioUsdRateField {
+  display: none;
+}
+
+#portfolioUsdRateField.show {
+  display: flex;
+}
+
 .modal__actions {
   display: flex;
   justify-content: flex-end;
