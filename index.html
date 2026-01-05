@@ -165,8 +165,8 @@
                   <option value="venta">Venta</option>
                   <option value="comision">Comision</option>
                 </select>
-                <input type="number" id="amountMin" min="0" placeholder="Min CLP" />
-                <input type="number" id="amountMax" min="0" placeholder="Max CLP" />
+                <input type="number" id="amountMin" min="0" step="0.01" inputmode="decimal" placeholder="Min CLP" />
+                <input type="number" id="amountMax" min="0" step="0.01" inputmode="decimal" placeholder="Max CLP" />
                 <input type="text" id="searchInput" placeholder="Buscar por nota, tipo o fecha" />
               </div>
               <button class="btn btn--primary" id="addMovementBtn">Agregar movimiento</button>
@@ -215,7 +215,7 @@
         </label>
         <label>
           Monto (CLP)
-          <input type="number" id="amountInput" min="0" required />
+          <input type="number" id="amountInput" min="0" step="0.01" inputmode="decimal" required />
         </label>
         <label>
           Nota
@@ -249,7 +249,7 @@
         </label>
         <label id="portfolioUsdRateField">
           Valor USD en CLP
-          <input type="number" id="portfolioUsdRateInput" min="1" step="0.01" placeholder="Ej: 900" />
+          <input type="number" id="portfolioUsdRateInput" min="0.01" step="0.01" inputmode="decimal" placeholder="Ej: 900.00" />
         </label>
         <label>
           Color representativo
@@ -277,7 +277,7 @@
         </label>
         <label>
           Balance total (CLP)
-          <input type="number" id="balanceValueInput" min="0" required />
+          <input type="number" id="balanceValueInput" min="0" step="0.01" inputmode="decimal" required />
         </label>
         <div class="modal__actions">
           <button type="button" class="btn btn--ghost" id="cancelBalance">Cancelar</button>
