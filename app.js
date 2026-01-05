@@ -8,6 +8,8 @@ const DEFAULT_THEME = {
 const DEFAULT_PRIVACY = {
   presentationMode: false
 };
+const DEFAULT_CURRENCY = "CLP";
+const DEFAULT_USD_RATE = 900;
 
 const demoData = {
   portfolios: [
@@ -126,6 +128,9 @@ const elements = {
   portfolioModalTitle: document.getElementById("portfolioModalTitle"),
   portfolioForm: document.getElementById("portfolioForm"),
   portfolioNameInput: document.getElementById("portfolioNameInput"),
+  portfolioCurrencyInput: document.getElementById("portfolioCurrencyInput"),
+  portfolioUsdRateInput: document.getElementById("portfolioUsdRateInput"),
+  portfolioUsdRateField: document.getElementById("portfolioUsdRateField"),
   portfolioColorInput: document.getElementById("portfolioColorInput"),
   portfolioSubmitBtn: document.getElementById("portfolioSubmitBtn"),
   closePortfolioModal: document.getElementById("closePortfolioModal"),
@@ -151,6 +156,11 @@ function loadState() {
     const seed = JSON.parse(JSON.stringify(demoData));
     seed.customWidgets = [];
     seed.theme = { ...DEFAULT_THEME };
+    seed.portfolios = seed.portfolios.map((portfolio) => ({
+      ...portfolio,
+      currency: DEFAULT_CURRENCY,
+      usdRate: DEFAULT_USD_RATE
+    }));
     return seed;
   }
   try {
@@ -161,7 +171,9 @@ function loadState() {
     if (parsed.presentationMode === undefined) parsed.presentationMode = DEFAULT_PRIVACY.presentationMode;
     parsed.portfolios = parsed.portfolios.map((portfolio, index) => ({
       ...portfolio,
-      color: portfolio.color || DEFAULT_COLORS[index % DEFAULT_COLORS.length]
+      color: portfolio.color || DEFAULT_COLORS[index % DEFAULT_COLORS.length],
+      currency: portfolio.currency || DEFAULT_CURRENCY,
+      usdRate: portfolio.usdRate || DEFAULT_USD_RATE
     }));
     return parsed;
   } catch {
@@ -169,6 +181,11 @@ function loadState() {
     seed.customWidgets = [];
     seed.theme = { ...DEFAULT_THEME };
     seed.presentationMode = DEFAULT_PRIVACY.presentationMode;
+    seed.portfolios = seed.portfolios.map((portfolio) => ({
+      ...portfolio,
+      currency: DEFAULT_CURRENCY,
+      usdRate: DEFAULT_USD_RATE
+    }));
     return seed;
   }
 }
@@ -177,12 +194,17 @@ function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-function formatCurrency(value) {
+function formatMoney(value, currency) {
+  const isUsd = currency === "USD";
   return new Intl.NumberFormat("es-CL", {
     style: "currency",
-    currency: "CLP",
-    maximumFractionDigits: 0
+    currency: isUsd ? "USD" : "CLP",
+    maximumFractionDigits: isUsd ? 2 : 0
   }).format(value);
+}
+
+function formatCurrency(value) {
+  return formatMoney(value, "CLP");
 }
 
 function formatPercent(value) {
@@ -266,6 +288,21 @@ function getPortfolioColor(portfolio, index) {
   return portfolio.color || DEFAULT_COLORS[index % DEFAULT_COLORS.length];
 }
 
+function getPortfolioCurrency(portfolio) {
+  return portfolio.currency || DEFAULT_CURRENCY;
+}
+
+function getPortfolioUsdRate(portfolio) {
+  return Number(portfolio.usdRate) || DEFAULT_USD_RATE;
+}
+
+function convertToClp(value, portfolio) {
+  if (getPortfolioCurrency(portfolio) === "USD") {
+    return value * getPortfolioUsdRate(portfolio);
+  }
+  return value;
+}
+
 function getLastBalanceDate(portfolioId) {
   const balances = getBalances(portfolioId);
   if (!balances.length) return "-";
@@ -345,7 +382,7 @@ function buildDistribution() {
     const transactions = getPortfolioTransactions(portfolio.id);
     return {
       name: portfolio.name,
-      value: getValorActual(portfolio, transactions),
+      value: convertToClp(getValorActual(portfolio, transactions), portfolio),
       color: getPortfolioColor(portfolio, index)
     };
   });
@@ -356,11 +393,14 @@ function buildGlobalBalances() {
     (a, b) => new Date(a) - new Date(b)
   );
   const byPortfolio = new Map();
+  const portfolioMap = new Map(state.portfolios.map((item) => [item.id, item]));
   state.balances.forEach((balance) => {
     if (!byPortfolio.has(balance.portfolioId)) {
       byPortfolio.set(balance.portfolioId, []);
     }
-    byPortfolio.get(balance.portfolioId).push(balance);
+    const portfolio = portfolioMap.get(balance.portfolioId);
+    const converted = portfolio ? convertToClp(balance.value, portfolio) : balance.value;
+    byPortfolio.get(balance.portfolioId).push({ ...balance, value: converted });
   });
   byPortfolio.forEach((items) => items.sort((a, b) => new Date(a.date) - new Date(b.date)));
 
@@ -655,9 +695,9 @@ function renderDashboard() {
       const aportesNetos = getAportesNetos(transactions);
       const valorActual = getValorActual(portfolio, transactions);
       const pnl = getPnL(valorActual, aportesNetos);
-      acc.aportesNetos += aportesNetos;
-      acc.valorActual += valorActual;
-      acc.pnl += pnl;
+      acc.aportesNetos += convertToClp(aportesNetos, portfolio);
+      acc.valorActual += convertToClp(valorActual, portfolio);
+      acc.pnl += convertToClp(pnl, portfolio);
       return acc;
     },
     { aportesNetos: 0, valorActual: 0, pnl: 0 }
@@ -681,13 +721,16 @@ function renderDashboard() {
     const aportesNetos = getAportesNetos(transactions);
     const valorActual = getValorActual(portfolio, transactions);
     const pnl = getPnL(valorActual, aportesNetos);
+    const aportesNetosClp = convertToClp(aportesNetos, portfolio);
+    const valorActualClp = convertToClp(valorActual, portfolio);
+    const pnlClp = convertToClp(pnl, portfolio);
     const pnlPercentLocal = getPnLPercent(pnl, aportesNetos);
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><span class="color-dot" style="background:${getPortfolioColor(portfolio, index)}"></span> ${portfolio.name}</td>
-      <td class="sensitive">${formatCurrency(aportesNetos)}</td>
-      <td class="sensitive">${formatCurrency(valorActual)}</td>
-      <td><span class="${pnl >= 0 ? "positive" : "negative"} sensitive">${formatCurrency(pnl)} (${formatPercent(pnlPercentLocal)})</span></td>
+      <td class="sensitive">${formatCurrency(aportesNetosClp)}</td>
+      <td class="sensitive">${formatCurrency(valorActualClp)}</td>
+      <td><span class="${pnlClp >= 0 ? "positive" : "negative"} sensitive">${formatCurrency(pnlClp)} (${formatPercent(pnlPercentLocal)})</span></td>
       <td>${getLastBalanceDate(portfolio.id)}</td>
     `;
     elements.summaryTable.appendChild(tr);
@@ -776,6 +819,8 @@ function renderPortfolioChart(balances, portfolioId) {
       : "Balance total";
 
   if (portfolioLineChart) portfolioLineChart.destroy();
+  const portfolio = state.portfolios.find((item) => item.id === portfolioId);
+  const currency = portfolio ? getPortfolioCurrency(portfolio) : "CLP";
   portfolioLineChart = new Chart(elements.portfolioLineChart, {
     type: "line",
     data: {
@@ -796,7 +841,7 @@ function renderPortfolioChart(balances, portfolioId) {
       scales: {
         y: {
           ticks: {
-            callback: (value) => formatCurrency(value)
+            callback: (value) => formatMoney(value, currency)
           }
         }
       }
@@ -804,7 +849,7 @@ function renderPortfolioChart(balances, portfolioId) {
   });
 }
 
-function renderPortfolioBalancesTable(balances, portfolioId) {
+function renderPortfolioBalancesTable(balances, portfolioId, currency) {
   const netMap = buildNetAporteMap(portfolioId);
   elements.balancesTable.innerHTML = "";
   const total = balances.length;
@@ -857,8 +902,8 @@ function renderPortfolioBalancesTable(balances, portfolioId) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${balance.date}</td>
-      <td class="sensitive">${formatCurrency(balance.value)}</td>
-      <td><span class="badge ${dailyGain === null ? "badge--neutral" : dailyGain >= 0 ? "badge--positive" : "badge--negative"} sensitive">${dailyGain === null ? "-" : formatCurrency(dailyGain)}</span></td>
+      <td class="sensitive">${formatMoney(balance.value, currency)}</td>
+      <td><span class="badge ${dailyGain === null ? "badge--neutral" : dailyGain >= 0 ? "badge--positive" : "badge--negative"} sensitive">${dailyGain === null ? "-" : formatMoney(dailyGain, currency)}</span></td>
       <td><span class="badge ${dailyGain === null ? "badge--neutral" : dailyGain >= 0 ? "badge--positive" : "badge--negative"} sensitive">${dailyPercent === null ? "-" : formatPercent(dailyPercent)}</span></td>
       <td>
         <button class="btn btn--icon btn--ghost" data-action="edit-balance" data-id="${balance.id}" aria-label="Editar balance">
@@ -885,6 +930,7 @@ function renderPortfolioBalancesTable(balances, portfolioId) {
 function renderPortfolio() {
   const portfolio = state.portfolios.find((p) => p.id === currentPortfolioId);
   if (!portfolio) return;
+  const currency = getPortfolioCurrency(portfolio);
 
   elements.portfolioName.textContent = portfolio.name;
 
@@ -900,21 +946,21 @@ function renderPortfolio() {
   const annualized = getAnnualizedReturnFromAvgDaily(stats.avgDailyPercent);
 
   elements.portfolioKpis.innerHTML = "";
-  elements.portfolioKpis.appendChild(createKpi("Aportes netos", formatCurrency(aportesNetos), null));
-  elements.portfolioKpis.appendChild(createKpi("Valor actual", formatCurrency(valorActual), null));
-  elements.portfolioKpis.appendChild(createKpi("Ganancias totales", formatCurrency(pnl), pnlPercent));
+  elements.portfolioKpis.appendChild(createKpi("Aportes netos", formatMoney(aportesNetos, currency), null));
+  elements.portfolioKpis.appendChild(createKpi("Valor actual", formatMoney(valorActual, currency), null));
+  elements.portfolioKpis.appendChild(createKpi("Ganancias totales", formatMoney(pnl, currency), pnlPercent));
   elements.portfolioKpis.appendChild(
     createKpi("Rent. anualizada", annualized === null ? "-" : formatPercent(annualized), null)
   );
   elements.portfolioKpis.appendChild(
-    createKpi("Ultima ganancia", formatCurrency(stats.dailyGain), balancesAll.length ? stats.dailyPercent : null)
+    createKpi("Ultima ganancia", formatMoney(stats.dailyGain, currency), balancesAll.length ? stats.dailyPercent : null)
   );
   elements.portfolioKpis.appendChild(
     createKpi("Promedio diario", formatPercent(stats.avgDailyPercent), stats.avgDailyPercent)
   );
 
   renderPortfolioChart(balancesFiltered, portfolio.id);
-  renderPortfolioBalancesTable(balancesFiltered, portfolio.id);
+  renderPortfolioBalancesTable(balancesFiltered, portfolio.id, currency);
   renderCustomWidgets(balancesAll, portfolio.id);
 
   const filteredTransactions = filterByRange(transactions, "date").filter((tx) => {
@@ -971,7 +1017,7 @@ function renderPortfolio() {
     tr.innerHTML = `
       <td>${tx.date}</td>
       <td><span class="badge ${typeClass}">${tx.type}</span></td>
-      <td class="sensitive">${formatCurrency(tx.amount)}</td>
+      <td class="sensitive">${formatMoney(tx.amount, currency)}</td>
       <td>${tx.note || "-"}</td>
       <td>
         <button class="btn btn--icon btn--ghost" data-action="edit" data-id="${tx.id}" aria-label="Editar movimiento">
@@ -1101,6 +1147,10 @@ function openPortfolioModal() {
   elements.portfolioModalTitle.textContent = "Nueva cartera";
   elements.portfolioSubmitBtn.textContent = "Crear";
   elements.portfolioNameInput.value = "";
+  elements.portfolioCurrencyInput.value = DEFAULT_CURRENCY;
+  elements.portfolioUsdRateInput.value = DEFAULT_USD_RATE;
+  elements.portfolioUsdRateField.classList.toggle("show", DEFAULT_CURRENCY === "USD");
+  elements.portfolioUsdRateInput.required = DEFAULT_CURRENCY === "USD";
   elements.portfolioColorInput.value = DEFAULT_COLORS[state.portfolios.length % DEFAULT_COLORS.length];
   elements.portfolioModal.classList.add("open");
 }
@@ -1116,6 +1166,11 @@ function openRenamePortfolioModal() {
   elements.portfolioModalTitle.textContent = "Editar cartera";
   elements.portfolioSubmitBtn.textContent = "Guardar";
   elements.portfolioNameInput.value = portfolio.name;
+  elements.portfolioCurrencyInput.value = getPortfolioCurrency(portfolio);
+  elements.portfolioUsdRateInput.value = getPortfolioUsdRate(portfolio);
+  const isUsd = getPortfolioCurrency(portfolio) === "USD";
+  elements.portfolioUsdRateField.classList.toggle("show", isUsd);
+  elements.portfolioUsdRateInput.required = isUsd;
   elements.portfolioColorInput.value = portfolio.color || DEFAULT_COLORS[0];
   elements.portfolioModal.classList.add("open");
 }
@@ -1347,17 +1402,24 @@ function handleNewPortfolio(event) {
   const name = elements.portfolioNameInput.value.trim();
   if (!name) return;
   const color = elements.portfolioColorInput.value || DEFAULT_COLORS[0];
+  const currency = elements.portfolioCurrencyInput.value || DEFAULT_CURRENCY;
+  const usdRateRaw = Number(elements.portfolioUsdRateInput.value);
+  const usdRate = Number.isFinite(usdRateRaw) && usdRateRaw > 0 ? usdRateRaw : DEFAULT_USD_RATE;
   if (editingPortfolioId) {
     const portfolio = state.portfolios.find((item) => item.id === editingPortfolioId);
     if (portfolio) {
       portfolio.name = name;
       portfolio.color = color;
+      portfolio.currency = currency;
+      portfolio.usdRate = usdRate;
     }
   } else {
     const newPortfolio = {
       id: `p${crypto.randomUUID()}`,
       name,
-      color
+      color,
+      currency,
+      usdRate
     };
     state.portfolios.push(newPortfolio);
   }
@@ -1410,6 +1472,12 @@ function handleImport(event) {
         if (!parsed.customWidgets) parsed.customWidgets = [];
         if (!parsed.theme) parsed.theme = { ...DEFAULT_THEME };
         if (parsed.presentationMode === undefined) parsed.presentationMode = DEFAULT_PRIVACY.presentationMode;
+        parsed.portfolios = parsed.portfolios.map((portfolio, index) => ({
+          ...portfolio,
+          color: portfolio.color || DEFAULT_COLORS[index % DEFAULT_COLORS.length],
+          currency: portfolio.currency || DEFAULT_CURRENCY,
+          usdRate: portfolio.usdRate || DEFAULT_USD_RATE
+        }));
         state = parsed;
         applyTheme(state.theme);
         syncThemeInputs();
@@ -1467,6 +1535,11 @@ function init() {
   switchView("dashboard");
   syncThemeInputs();
   syncPresentationToggle();
+  elements.portfolioCurrencyInput.addEventListener("change", () => {
+    const isUsd = elements.portfolioCurrencyInput.value === "USD";
+    elements.portfolioUsdRateField.classList.toggle("show", isUsd);
+    elements.portfolioUsdRateInput.required = isUsd;
+  });
   elements.toggleSidebar.addEventListener("click", () => {
     elements.sidebar.classList.toggle("show");
   });
