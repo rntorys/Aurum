@@ -72,6 +72,7 @@ const elements = {
   portfolioView: document.getElementById("portfolioView"),
   dashboardKpis: document.getElementById("dashboardKpis"),
   summaryTable: document.querySelector("#summaryTable tbody"),
+  monthlyTable: document.querySelector("#monthlyTable tbody"),
   dashboardChartMode: document.getElementById("dashboardChartMode"),
   lineChart: document.getElementById("lineChart"),
   doughnutChart: document.getElementById("doughnutChart"),
@@ -489,6 +490,29 @@ function buildGlobalCumulativeGainSeries(balances) {
   });
 }
 
+function formatMonthLabel(dateStr) {
+  const date = new Date(dateStr);
+  return date.toLocaleDateString("es-CL", { month: "long", year: "numeric" });
+}
+
+function buildMonthlyGains() {
+  const balances = buildGlobalBalances();
+  if (balances.length < 2) return [];
+  const netMap = buildGlobalNetAporteMap();
+  const monthly = new Map();
+  for (let i = 1; i < balances.length; i += 1) {
+    const current = balances[i];
+    const prev = balances[i - 1];
+    const net = netMap.get(current.date) || 0;
+    const gain = current.value - prev.value - net;
+    const monthKey = current.date.slice(0, 7);
+    const existing = monthly.get(monthKey) || { month: monthKey, value: 0, label: formatMonthLabel(current.date) };
+    existing.value += gain;
+    monthly.set(monthKey, existing);
+  }
+  return Array.from(monthly.values()).sort((a, b) => b.month.localeCompare(a.month));
+}
+
 const WIDGET_DEFS = {
   last30Gain: {
     title: "Ultimos 30 dias",
@@ -740,6 +764,7 @@ function renderDashboard() {
   });
 
   renderCharts();
+  renderMonthlyGains();
 }
 
 function renderCharts() {
@@ -800,6 +825,26 @@ function renderCharts() {
       ]
     },
     options: { responsive: true, plugins: { legend: { position: "bottom" } } }
+  });
+}
+
+function renderMonthlyGains() {
+  if (!elements.monthlyTable) return;
+  elements.monthlyTable.innerHTML = "";
+  const rows = buildMonthlyGains();
+  if (!rows.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="table-empty" colspan="2">No hay suficientes datos.</td>`;
+    elements.monthlyTable.appendChild(tr);
+    return;
+  }
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${row.label}</td>
+      <td><span class="${row.value >= 0 ? "positive" : "negative"}">${formatCurrency(row.value)}</span></td>
+    `;
+    elements.monthlyTable.appendChild(tr);
   });
 }
 
