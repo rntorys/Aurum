@@ -490,8 +490,9 @@ function buildGlobalCumulativeGainSeries(balances) {
   });
 }
 
-function formatMonthLabel(dateStr) {
-  const date = new Date(dateStr);
+function formatMonthLabelFromKey(monthKey) {
+  const [year, month] = monthKey.split("-").map((value) => Number(value));
+  const date = new Date(year, month - 1, 1);
   return date.toLocaleDateString("es-CL", { month: "long", year: "numeric" });
 }
 
@@ -506,7 +507,11 @@ function buildMonthlyGains() {
     const net = netMap.get(current.date) || 0;
     const gain = current.value - prev.value - net;
     const monthKey = current.date.slice(0, 7);
-    const existing = monthly.get(monthKey) || { month: monthKey, value: 0, label: formatMonthLabel(current.date) };
+    const existing = monthly.get(monthKey) || {
+      month: monthKey,
+      value: 0,
+      label: formatMonthLabelFromKey(monthKey)
+    };
     existing.value += gain;
     monthly.set(monthKey, existing);
   }
